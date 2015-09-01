@@ -1,0 +1,327 @@
+#!/usr/bin/python
+
+"""
+    This program is a graphical template editor for uppaal models.
+
+    Copyright (C) 2008 Andreas Engelbredt Dalsgaard <andreas.dalsgaard@gmail.com>
+                       Mads Christian Olesen <mchro@cs.aau.dk>
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>. """
+
+import pyuppaal
+from pyuppaal import *
+import gtk
+import os
+import gtk.glade
+import sys
+import gobject
+
+class MainWindow:
+
+    def __init__(self):
+
+        #Set the Glade file
+        path = os.path.realpath(__file__).split('/')[:-2]
+        self.gladefile = os.path.join('/'.join(path), "data", "tedit.glade")
+        self.wTree = gtk.glade.XML(self.gladefile)
+
+        self.mainWin = self.wTree.get_widget("mainWindow")
+        self.treeView1 = self.wTree.get_widget("treeview1")
+        col = gtk.TreeViewColumn("Templates", gtk.CellRendererText(), text=0)
+        self.treeView1.append_column(col)
+        self.treeView2 = self.wTree.get_widget("treeview2")
+        col = gtk.TreeViewColumn("Templates", gtk.CellRendererText(), text=0)
+        self.treeView2.append_column(col)
+        self.mainWin.connect ("destroy", self.on_quit)
+        self.wTree.signal_autoconnect(self)
+        self.file1changed = 0
+        self.file2changed = 0
+
+        if len(sys.argv) > 1:
+            self.filename1 = sys.argv[1]
+            self.nta1 = self.open_file(sys.argv[1])
+            self.NtaInTreeView(self.nta1, self.treeView1)
+            if len(sys.argv) > 2:
+                self.filename2 = sys.argv[2]
+                self.nta2 = self.open_file(sys.argv[2])
+                self.NtaInTreeView(self.nta2, self.treeView2)
+            else:
+                self.filename2 = None
+                self.nta2 = pyuppaal.NTA()
+        else:
+            self.filename1 = None
+            self.nta1 = pyuppaal.NTA()
+            self.filename2 = None
+            self.nta2 = pyuppaal.NTA()
+
+        self.mainWin.show_all ()
+
+    def open_file(self, filename):
+        filesock = open(filename, "r")
+        nta = pyuppaal.NTA.from_xml(filesock)
+        filesock.close()
+        return nta
+
+    def NtaInTreeView(self, nta, treeView):
+        liststore = gtk.ListStore(str, gobject.TYPE_PYOBJECT)
+        for t in nta.templates:
+            liststore.append([str(t.name), t])
+        treeView.set_model(liststore)
+
+    def on_quit(self, widget):
+        if self.file1changed == 1 or self.file2changed == 1:
+            dialog = gtk.MessageDialog(self.mainWin, gtk.DIALOG_MODAL |
+                                gtk.DIALOG_DESTROY_WITH_PARENT,
+                                gtk.MESSAGE_WARNING,
+                                gtk.BUTTONS_NONE,
+                                'Save changes before closing?') 
+
+            dialog.add_buttons(gtk.STOCK_YES, gtk.RESPONSE_YES)
+            dialog.add_buttons(gtk.STOCK_NO, gtk.RESPONSE_NO)
+            dialog.add_buttons(gtk.STOCK_CANCEL, gtk.RESPONSE_CANCEL)
+            dialog.set_default_response(gtk.RESPONSE_YES)
+
+            result = dialog.run()
+            dialog.destroy()
+
+            if result == gtk.RESPONSE_YES:
+                self.save()
+                gtk.main_quit()
+            elif result == gtk.RESPONSE_NO:
+                gtk.main_quit()
+        else:
+            gtk.main_quit()
+
+    def save1_clicked_cb(self, widget):
+        if self.filename1 != None:
+            self.save(1)
+        else:
+            self.save_as1_clicked_cb(None)
+
+    def save_as1_clicked_cb(self, widget):
+        file_save = gtk.FileChooserDialog(title="Save UPPAAL XML file", 
+            action=gtk.FILE_CHOOSER_ACTION_SAVE,
+                buttons=(gtk.STOCK_CANCEL,
+                        gtk.RESPONSE_CANCEL,
+                        gtk.STOCK_SAVE,
+                        gtk.RESPONSE_OK))
+        filter = gtk.FileFilter()
+        filter.set_name("UPPAAL XML files")
+        filter.add_pattern("*.xml")
+        file_save.add_filter(filter)
+        filter = gtk.FileFilter()
+        filter.set_name("All files")
+        filter.add_pattern("*")
+        file_save.add_filter(filter)
+
+        if file_save.run() == gtk.RESPONSE_OK:
+            filename = file_save.get_filename()
+            file_save.destroy()
+        else:
+            file_save.destroy()
+            return
+
+        if not filename.endswith(".xml") and not os.path.exists(filename):
+            filename = filename + ".xml"
+            
+        self.filename1 = filename
+        self.save(1)    
+
+    def save2_clicked_cb(self, widget):
+        if self.filename2 != None:
+            self.save(2)
+        else:
+            self.save_as2_clicked(None)
+
+    def save_as2_clicked_cb(self, widget):
+        file_save = gtk.FileChooserDialog(title="Save UPPAAL XML file", 
+            action=gtk.FILE_CHOOSER_ACTION_SAVE,
+                buttons=(gtk.STOCK_CANCEL,
+                        gtk.RESPONSE_CANCEL,
+                        gtk.STOCK_SAVE,
+                        gtk.RESPONSE_OK))
+        filter = gtk.FileFilter()
+        filter.set_name("UPPAAL XML files")
+        filter.add_pattern("*.xml")
+        file_save.add_filter(filter)
+        filter = gtk.FileFilter()
+        filter.set_name("All files")
+        filter.add_pattern("*")
+        file_save.add_filter(filter)
+
+        if file_save.run() == gtk.RESPONSE_OK:
+            filename = file_save.get_filename()
+            file_save.destroy()
+        else:
+            file_save.destroy()
+            return
+
+        if not filename.endswith(".xml") and not os.path.exists(filename):
+            filename = filename + ".xml"
+        self.filename2 = filename
+        self.save(2)    
+
+    def save(self, save_all=0):
+        if self.filename1 != None and (save_all == 0 or save_all == 1):
+            filesock = open(self.filename1, "w")
+            filesock.write(self.nta1.to_xml())
+            filesock.close()
+            self.file1changed = 0
+
+        if self.filename2 != None and (save_all == 0 or save_all == 2):
+            filesock = open(self.filename2, "w")
+            filesock.write(self.nta2.to_xml())
+            filesock.close() 
+            self.file2changed = 0
+
+    def openNta1_clicked_cb(self, widget):
+        file_open = gtk.FileChooserDialog(title="Open UPPAAL XML file", 
+            action=gtk.FILE_CHOOSER_ACTION_OPEN,
+                buttons=(gtk.STOCK_CANCEL,
+                        gtk.RESPONSE_CANCEL,
+                        gtk.STOCK_OPEN,
+                        gtk.RESPONSE_OK))
+        filter = gtk.FileFilter()
+        filter.set_name("UPPAAL XML files")
+        filter.add_pattern("*.xml")
+        file_open.add_filter(filter)
+        filter = gtk.FileFilter()
+        filter.set_name("All files")
+        filter.add_pattern("*")
+        file_open.add_filter(filter)
+
+        if file_open.run() == gtk.RESPONSE_OK:
+            filename = file_open.get_filename()
+            file_open.destroy()
+        else:
+            file_open.destroy()
+            return
+        self.filename1 = filename
+        self.nta1 = self.open_file(filename)
+        self.NtaInTreeView(self.nta1, self.treeView1)
+    
+    def openNta2_clicked_cb(self, widget):
+        file_open = gtk.FileChooserDialog(title="Open UPPAAL XML file", 
+            action=gtk.FILE_CHOOSER_ACTION_OPEN,
+                buttons=(gtk.STOCK_CANCEL,
+                        gtk.RESPONSE_CANCEL,
+                        gtk.STOCK_OPEN,
+                        gtk.RESPONSE_OK))
+        filter = gtk.FileFilter()
+        filter.set_name("UPPAAL XML files")
+        filter.add_pattern("*.xml")
+        file_open.add_filter(filter)
+        filter = gtk.FileFilter()
+        filter.set_name("All files")
+        filter.add_pattern("*")
+        file_open.add_filter(filter)
+
+        if file_open.run() == gtk.RESPONSE_OK:
+            filename = file_open.get_filename()
+            file_open.destroy()
+        else:
+            file_open.destroy()
+            return
+        self.filename2 = filename
+        self.nta2 = self.open_file(filename)
+        self.NtaInTreeView(self.nta2, self.treeView2)
+
+    def toNta2_clicked_cb(self, widget):
+        treeselection = self.treeView1.get_selection()
+        (model, iter) = treeselection.get_selected()
+        if iter != None:
+            self.nta2.templates.append(model.get_value(iter, 1))
+            self.NtaInTreeView(self.nta2, self.treeView2)
+            self.file2changed = 1
+
+    def toNta1_clicked_cb(self, widget):
+        treeselection = self.treeView2.get_selection()
+        (model, iter) = treeselection.get_selected()
+        if iter != None: 
+            self.nta1.templates.append(model.get_value(iter, 1))
+            self.NtaInTreeView(self.nta1, self.treeView1)
+            self.file1changed = 1
+
+    def removeNta2_clicked_cb(self, widget):
+        treeselection = self.treeView2.get_selection()
+        (model, iter) = treeselection.get_selected()
+        if iter != None: 
+            self.nta2.templates.remove(model.get_value(iter, 1))
+            self.NtaInTreeView(self.nta2, self.treeView2)
+            self.file2changed = 1
+
+    def removeNta1_clicked_cb(self, widget):
+        treeselection = self.treeView1.get_selection()
+        (model, iter) = treeselection.get_selected()
+        if iter != None: 
+            self.nta1.templates.remove(model.get_value(iter, 1))
+            self.NtaInTreeView(self.nta1, self.treeView1)
+            self.file1changed = 1
+
+    def upNta2_clicked_cb(self, widget):
+        treeselection = self.treeView2.get_selection()
+        (model, iter) = treeselection.get_selected()
+        if iter != None:
+            index = self.nta2.templates.index(model.get_value(iter, 1))
+            if index > 0:
+                tmp = self.nta2.templates[index - 1]
+                self.nta2.templates[index - 1] = self.nta2.templates[index]
+                self.nta2.templates[index] = tmp
+                self.NtaInTreeView(self.nta2, self.treeView2)
+                self.file2changed = 1
+
+    def upNta1_clicked_cb(self, widget):
+        treeselection = self.treeView1.get_selection()
+        (model, iter) = treeselection.get_selected()
+        if iter != None:
+            index = self.nta1.templates.index(model.get_value(iter, 1))
+            if index > 0:
+                tmp = self.nta1.templates[index - 1]
+                self.nta1.templates[index - 1] = self.nta1.templates[index]
+                self.nta1.templates[index] = tmp
+                self.NtaInTreeView(self.nta1, self.treeView1)
+                self.file1changed = 1
+
+    def downNta2_clicked_cb(self, widget):
+        treeselection = self.treeView2.get_selection()
+        (model, iter) = treeselection.get_selected()
+        if iter != None:
+            index = self.nta2.templates.index(model.get_value(iter, 1))
+            if index < len(self.nta2.templates) - 1:
+                tmp = self.nta2.templates[index + 1]
+                self.nta2.templates[index + 1] = self.nta2.templates[index]
+                self.nta2.templates[index] = tmp
+                self.NtaInTreeView(self.nta2, self.treeView2)
+                self.file2changed = 1
+
+    def downNta1_clicked_cb(self, widget):
+        treeselection = self.treeView1.get_selection()
+        (model, iter) = treeselection.get_selected()
+        if iter != None:
+            index = self.nta1.templates.index(model.get_value(iter, 1))
+            if index < len(self.nta1.templates) - 1:
+                tmp = self.nta1.templates[index + 1]
+                self.nta1.templates[index + 1] = self.nta1.templates[index]
+                self.nta1.templates[index] = tmp
+                self.NtaInTreeView(self.nta1, self.treeView1)
+                self.file1changed = 1
+
+def main ():
+    window = MainWindow()    
+    gtk.main ()
+
+if __name__ == "__main__":
+    main()
+
+# vim:ts=4:sw=4:expandtab

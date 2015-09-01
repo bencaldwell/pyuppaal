@@ -1,0 +1,590 @@
+#!/usr/bin/python
+
+"""
+    This program is a graphical user interface for pyuppaal. It uses goocanvas and 
+    was initially inspired from examples included in the python bindings of goocanvas.
+
+    Copyright (C) 2008 Andreas Engelbredt Dalsgaard <andreas.dalsgaard@gmail.com>
+                       Mads Christian Olesen <mchro@cs.aau.dk>
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>. """
+
+
+import pyuppaal
+from pyuppaal import *
+import goocanvas
+import gtk
+import os
+import gtk.glade
+import math
+import cairo
+import sys
+
+canvas = None
+
+class TemplateUI:
+    def __init__(self, template, canvas):
+        self.template = template
+
+class TransitionUI:
+    def __init__(self, transition, canvas, locationUI_source, locationUI_target):
+        self.canvas = canvas
+        self.root = canvas.get_root_item_model()
+        self.transition = transition
+        self.guard = None
+        self.assignment = None
+        self.synchronisation = None
+        self.group = goocanvas.GroupModel (parent = self.root)
+        self.ellipse_source = goocanvas.EllipseModel (parent = self.group,
+                                       center_x = 0,
+                                       center_y = 0,
+                                       radius_x = 5,
+                                       radius_y = 5,
+                                       visibility = goocanvas.ITEM_INVISIBLE,
+                                       pointer_events = goocanvas.EVENTS_ALL)
+        self.path = create_path_data(self.transition.source, self.transition.target, self.group)
+        self.ellipse_target = goocanvas.EllipseModel (parent = self.group,
+                                       center_x = 0,
+                                       center_y = 0,
+                                       radius_x = 5,
+                                       radius_y = 5,
+                                       visibility = goocanvas.ITEM_INVISIBLE,
+                                       pointer_events = goocanvas.EVENTS_ALL)
+
+        x_source = get_locationNail_x_coordinate(transition.source.xpos, transition.source.ypos, transition.target.xpos, transition.target.ypos, 25+2.5)
+        y_source = get_locationNail_y_coordinate(transition.source.xpos, transition.source.ypos, transition.target.xpos, transition.target.ypos, 25+2.5)
+        x_target = get_locationNail_x_coordinate(transition.target.xpos, transition.target.ypos, transition.source.xpos, transition.source.ypos, 25+2.5)
+        y_target = get_locationNail_y_coordinate(transition.target.xpos, transition.target.ypos, transition.source.xpos, transition.source.ypos, 25+2.5)
+        self.ellipse_source.translate (x_source, y_source)
+        self.ellipse_target.translate (x_target, y_target)
+
+        item = canvas.get_item(self.ellipse_source)
+        item.connect("button_press_event", on_transition_button_press)
+        item.connect("button_release_event", on_transition_button_release)
+        item.connect("motion_notify_event", on_transition_source_motion)
+        item.connect("enter_notify_event", on_transition_enter)
+        item.connect("leave_notify_event", on_transition_leave)
+
+        if self.transition.guard.get_value():
+            self.guard = add_text(self.transition.guard.get_value(), self.transition.guard.xpos, self.transition.guard.ypos, self.group)
+    
+        if self.transition.assignment.get_value():
+            self.assignment = add_text(self.transition.assignment.get_value(), self.transition.assignment.xpos, self.transition.assignment.ypos, self.group)
+
+        if self.transition.synchronisation.get_value():
+            self.synchronisation = add_text(self.transition.synchronisation.get_value(), self.transition.synchronisation.xpos, self.transition.synchronisation.ypos, self.group)
+
+        item = canvas.get_item(self.ellipse_target)
+        item.connect("button_press_event", on_transition_button_press)
+        item.connect("button_release_event", on_transition_button_release)
+        item.connect("motion_notify_event", on_transition_target_motion)
+        item.connect("enter_notify_event", on_transition_enter)
+        item.connect("leave_notify_event", on_transition_leave)
+    
+        self.ellipse_source.set_data("group", self.group)
+        self.ellipse_source.set_data("path", self.path) 
+        self.ellipse_source.set_data("locationUI", locationUI_source)
+        locationUI_source.add_transition_ellipse(self.ellipse_source)
+        self.ellipse_target.set_data("group", self.group)
+        self.ellipse_target.set_data("path", self.path)
+        self.ellipse_target.set_data("locationUI", locationUI_target) 
+        locationUI_target.add_transition_ellipse(self.ellipse_target)
+        self.group.set_data("transitionUI", self)
+        canvas.set_data(self.transition.id, self.group)
+
+    def move_ellipse(self, ellipse, x, y, move_loc=False):
+        ellipse.translate(x, y)
+        if self.ellipse_source == ellipse:
+            start_x = self.path.get_data("start_x")+x
+            start_y = self.path.get_data("start_y")+y
+            end_x = self.path.get_data("end_x")
+            end_y = self.path.get_data("end_y")
+            self.path.set_data("start_x", start_x)
+            self.path.set_data("start_y", start_y)
+        elif self.ellipse_target == ellipse:
+            start_x = self.path.get_data("start_x")
+            start_y = self.path.get_data("start_y")
+            end_x = self.path.get_data("end_x")+x
+            end_y = self.path.get_data("end_y")+y
+            self.path.set_data("end_x", end_x)
+            self.path.set_data("end_y", end_y)
+        
+        if self.guard:
+            self.guard.translate(x,y) 
+            #TODO modify model 
+
+        if self.assignment:
+            self.assignment.translate(x,y) 
+            #TODO modify model 
+
+        if self.synchronisation:
+            self.synchronisation.translate(x,y) 
+            #TODO modify model 
+
+        if move_loc == False:
+            locationUI_prev = ellipse.get_data("locationUI")
+            self.transition.source = None
+        
+            if locationUI_prev != None:
+                location_prev = locationUI_prev.location 
+                locationUI_prev.remove_transition_ellipse(ellipse)
+        
+            location_ellipse_new = get_location_ellipse(x, y)
+            if location_ellipse_new != None:
+                location_new = location_ellipse_new.get_data("location")
+                locationUI_new = location_ellipse_new.get_parent().get_data("locationUI")
+                self.transition.source = location_new
+                locationUI_new.add_transition_ellipse(ellipse)
+            else:
+                ellipse.set_data("locationUI", None)
+    
+        self.path.set_property("data", get_path_data(start_x, start_y, end_x, end_y))
+
+# not class functions
+def on_transition_enter(item, target, event):
+    tmp = item.get_model()
+    tmp.set_property("visibility", goocanvas.ITEM_VISIBLE)
+
+def on_transition_leave(item, target, event):
+    tmp = item.get_model()
+    tmp.set_property("visibility", goocanvas.ITEM_INVISIBLE)
+
+def on_transition_button_press(item, target, event):
+    return on_button_press(item, target, event)
+
+def on_transition_button_release(item, target, event):
+    return on_button_release(item, target, event)
+
+def get_location_ellipse(x, y):
+    global canvas
+    if canvas.get_items_at(x, y, False):
+        for i in canvas.get_items_at(x, y, False):
+            if isinstance(i, goocanvas.Ellipse):
+                if i.get_property("radius_x") == 25:
+                    return i.get_model()
+
+    return None
+
+def on_transition_source_motion(item, target, event):
+        if not event.state & gtk.gdk.BUTTON1_MASK:
+            return False
+        else:
+            transitionUI = item.get_model().get_parent().get_data("transitionUI")
+            transitionUI.move_ellipse(transitionUI.ellipse_source, event.x, event.y, False)
+            return True
+
+def on_transition_target_motion(item, target, event):
+        if not event.state & gtk.gdk.BUTTON1_MASK:
+            return False
+        else:
+            transitionUI = item.get_model().get_parent().get_data("transitionUI")
+            transitionUI.move_ellipse(transitionUI.ellipse_target, event.x, event.y, False)
+        return True
+
+def get_radians(x0, y0, x1, y1):
+        a = abs(y1-y0)
+        b = abs(x1-x0)
+        if b == 0:
+            if y1 > y0:
+                return math.pi/2
+            else:
+                return math.pi+math.pi/2
+        
+        if (x0 > x1 and y0 > y1) or (x0 < x1 and y0 < y1):
+            return math.atan(b/float(a))+identify_pi_amount(x0, y0, x1, y1)
+        else:
+            return math.atan(float(a)/b)+identify_pi_amount(x0, y0, x1, y1)
+
+def identify_pi_amount(x0, y0, x1, y1):
+    if y0 > y1:
+        if x0 > x1:
+            return math.pi/2
+        else:
+            return 0 
+    else:
+        if x0 > x1:
+            return math.pi
+        else:
+            return math.pi+math.pi/2
+    
+
+def get_path_data(l_source_xpos, l_source_ypos, l_target_xpos, l_target_ypos):
+    #TODO clean up the following code
+    x_source = l_source_xpos
+    y_source = l_source_ypos 
+    x_target_p = get_locationNail_x_coordinate(l_target_xpos, l_target_ypos, l_source_xpos, l_source_ypos, 5)
+    y_target_p = get_locationNail_y_coordinate(l_target_xpos, l_target_ypos, l_source_xpos, l_source_ypos, 5)
+    x_target = l_target_xpos 
+    y_target = l_target_ypos
+    radians = get_radians(x_source, y_source, x_target, y_target)
+    plus = math.pi/4+radians
+    sub = identify_pi_amount(l_source_xpos, l_source_ypos,l_target_xpos, l_target_ypos)
+    h = math.sqrt(5*5+5*5)
+    x_mul2 = 1
+    y_mul2 = 1
+    x_mul3 = 1
+    y_mul3 = 1
+
+    if sub == 0:
+        x_mul = -1
+        y_mul = -1
+    elif sub == math.pi/2:
+        x_mul = 1 
+        y_mul = -1
+        x_mul3 = -1
+        y_mul3 = 1
+        x_mul2 = 1
+        y_mul2 = -1
+    elif sub == math.pi:
+        x_mul = 1 
+        y_mul = 1
+    elif sub == math.pi/2+math.pi:
+        x_mul = 1 
+        y_mul = 1
+        x_mul2 = -1
+        y_mul2 = -1
+
+    x_arrow1 = x_mul3*x_mul*h*math.cos(sub-(math.pi/4+radians))
+    y_arrow1 = y_mul3*y_mul*h*math.sin(sub-(math.pi/4+radians))
+    x_arrow2 = x_mul2*x_mul*h*math.cos(sub-(-math.pi/4+radians))
+    y_arrow2 = y_mul3*y_mul2*y_mul*h*math.sin(sub-(-math.pi/4+radians))
+
+    path_data = "M%s,%s " \
+           "L%s,%s " \
+           "M%s,%s " \
+           "L%s,%s " \
+           "L%s,%s " \
+           "L%s,%s " \
+           "z " % (     x_source, y_source,  
+                        x_target_p, y_target_p,
+                        x_target_p, y_target_p,
+                        x_target+x_arrow1, y_target+y_arrow1, 
+                        x_target, y_target,
+                        x_target+x_arrow2, y_target+y_arrow2)
+    return path_data
+ 
+def create_path_data(l_source, l_target, group):
+    x_source = get_locationNail_x_coordinate(l_source.xpos, l_source.ypos, l_target.xpos, l_target.ypos, 25)
+    y_source = get_locationNail_y_coordinate(l_source.xpos, l_source.ypos, l_target.xpos, l_target.ypos, 25)
+    x_target = get_locationNail_x_coordinate(l_target.xpos, l_target.ypos, l_source.xpos, l_source.ypos, 25)
+    y_target = get_locationNail_y_coordinate(l_target.xpos, l_target.ypos, l_source.xpos, l_source.ypos, 25)
+    path_data = get_path_data(x_source, y_source, x_target, y_target)
+    path = goocanvas.PathModel(parent = group, data=path_data)
+    path.set_data("start_x", x_source)
+    path.set_data("start_y", y_source)
+    path.set_data("end_x", x_target)
+    path.set_data("end_y", y_target)
+    return path
+
+
+class LocationUI:
+    def __init__(self, location, canvas):
+        self.transition_ellipse_set = set()
+        self.location = location
+        self.canvas = canvas
+        self.root = self.canvas.get_root_item_model()
+   
+        self.group = goocanvas.GroupModel (parent = self.root)
+        ellipse = goocanvas.EllipseModel (parent = self.group,
+                                       center_x = 0,
+                                       center_y = 0,
+                                       radius_x = 25,
+                                       radius_y = 25,
+                                       fill_color = "#204a87")
+        ellipse.translate (location.xpos, location.ypos)
+        ellipse.set_data("location", location)
+
+        item = canvas.get_item(ellipse)
+        item.connect("button_press_event", on_button_press)
+        item.connect("button_release_event", on_button_release)
+        item.connect("motion_notify_event", on_motion)
+
+        if location.invariant.get_value():
+            self.invariant = add_text(location.invariant.get_value(), (location.invariant.xpos), (location.invariant.ypos), self.group)
+    
+        if location.name.get_value():
+            self.name = add_text(location.name.get_value(), (location.name.xpos), (location.name.ypos), self.group)
+
+        ellipse.set_data("group", self.group)
+        self.group.set_data("locationUI", self)
+        canvas.set_data(location.id, self.group)
+
+    def add_transition_ellipse(self, ellipse):
+        self.transition_ellipse_set.add(ellipse)
+
+    def remove_transition_ellipse(self, ellipse):
+        self.transition_ellipse_set.remove(ellipse)
+
+    def move(self, x, y):
+        self.location.move_relative(x, y)
+        self.group.translate(x, y)
+        for e in self.transition_ellipse_set:
+            transitionui = e.get_parent().get_data("transitionUI")
+            transitionui.move_ellipse(e, x, y, True)
+
+def get_locationNail_x_coordinate(x0, y0, x1, y1, r):
+        a = abs(y1-y0)
+        b = abs(x1-x0)
+        if b == 0:
+            return x0
+
+        if x1 > x0:
+            return x0 + r * math.cos(math.atan(float(a)/b))
+        else:
+            return x0 - r * math.cos(math.atan(float(a)/b))
+            
+
+def get_locationNail_y_coordinate(x0, y0, x1, y1, r):
+        a = abs(y1-y0)
+        b = abs(x1-x0)
+        if b == 0:
+            if y1 > y0:
+                return y0 + r
+            else:
+                return y0 - r
+
+        if y1 > y0:
+            return y0 + r * math.sin(math.atan(float(a)/b))
+        else:
+            return y0 - r * math.sin(math.atan(float(a)/b))
+ 
+# Not class functions
+def on_motion(item, target, event):
+        canvas = item.get_canvas ()
+        change = False
+        if not event.state & gtk.gdk.BUTTON1_MASK:
+            return False
+        else:
+            locationUI = item.get_model().get_parent().get_data("locationUI")
+            locationUI.move(event.x, event.y)
+            return True
+
+def on_button_press(item, target, event):
+        fleur = gtk.gdk.Cursor(gtk.gdk.FLEUR)
+        canvas = item.get_canvas ()
+        canvas.pointer_grab(item, 
+                            gtk.gdk.POINTER_MOTION_MASK | gtk.gdk.BUTTON_RELEASE_MASK,
+                            fleur, event.time)
+        return True
+
+def on_button_release(item, target, event):
+        canvas = item.get_canvas ()
+        canvas.pointer_ungrab(item, event.time)
+        return True
+
+def add_text(str, xpos, ypos, group):
+    text = goocanvas.TextModel (parent = group,
+                                 x = xpos,
+                                   y = ypos,
+                                  text = str)
+    group.add_child(text, -1)
+    return text
+
+def setup_canvas (canvas, nta):
+    root = goocanvas.GroupModel ()
+    #locationUIs = {}
+
+    canvas.set_root_item_model (root)
+    for t in nta.templates:
+        for l in t.locations:
+            #locationUIs[l] = LocationUI(l, canvas)
+            l.locationUI = LocationUI(l, canvas)
+
+    for t in nta.templates:
+        for transition in t.transitions:
+            TransitionUI(transition, canvas, 
+                              transition.source.locationUI,
+                              transition.target.locationUI)
+
+def setup_nta():
+    loc2 = Location(invariant="z < Max", committed=True, name="Location 2", id="id", xpos=-100, ypos=-200)
+    loc1 = Location()
+    loc3 = Location()
+    loc4 = Location()
+
+    transitions = [
+      Transition(loc1, loc2, guard='c1 < 10', assignment='c1 = 0'),
+      Transition(loc1, loc3, guard='c1 >= 10', assignment='c1 = 0'),
+      Transition(loc2, loc4),
+      Transition(loc3, loc4),
+    ]
+
+    temp1 = Template("Template1", "",
+     locations=[loc1, loc2, loc3, loc4],
+     initlocation=loc1,
+     transitions=transitions)
+    temp1.layout()
+
+    nta1 = NTA("clock c1;","Process = Template1(); system Process;",[temp1])
+    return nta1
+
+class MainWindow:
+
+    def __init__(self):
+        self.canvas = goocanvas.Canvas ()
+        self.canvas.set_size_request (700, 600)
+        self.canvas.set_bounds (-500, -500, 500, 500)
+
+        if len(sys.argv) > 1:
+            fname = sys.argv[1]
+            self.open_file(fname)
+        else:
+            self.nta = setup_nta ()
+        setup_canvas (self.canvas, self.nta)
+
+        self.canvas.add_events(gtk.gdk.SCROLL_MASK)
+        global canvas
+        canvas = self.canvas
+        #self.canvas.connect("button-release-event", self.on_canvas_button_release)
+        self.canvas.connect("scroll-event", self.on_canvas_scroll_event)
+
+        #Set the Glade file
+        path = os.path.realpath(__file__).split('/')[:-2]
+        self.gladefile = os.path.join('/'.join(path), "data", "pyuppaal.glade")
+        self.wTree = gtk.glade.XML(self.gladefile)
+
+        self.mainWin = self.wTree.get_widget("mainWindow")
+        self.mainWin.connect ("destroy", gtk.main_quit)
+
+        self.wTree.get_widget("scrwWorkspace").add(self.canvas)
+
+        self.wTree.signal_autoconnect(self)
+
+        self.mainWin.show_all ()
+        
+    def on_canvas_scroll_event(self, widget, event):
+        #CTRL-scrolling zooms
+        if event.get_state() & gtk.gdk.CONTROL_MASK:
+            if event.direction == gtk.gdk.SCROLL_DOWN:
+                self.on_zoom_out()
+                return True
+            elif event.direction == gtk.gdk.SCROLL_UP:
+                self.on_zoom_in()
+                return True
+            #unknown direction, let someone else handle it
+        #SHIFT-scrolling scrolls left-right
+        if event.get_state() & gtk.gdk.SHIFT_MASK:
+            if event.direction == gtk.gdk.SCROLL_DOWN:
+                event.direction = gtk.gdk.SCROLL_RIGHT
+            if event.direction == gtk.gdk.SCROLL_UP:
+                event.direction = gtk.gdk.SCROLL_LEFT
+            
+
+    def on_add_location(self, widget):
+        location = Location()
+        LocationUI(location, self.canvas)
+
+    def on_add_transition(self, widget):
+        transition = Transition()
+        TransitionUI(transition, self.canvas)
+
+    def on_quit(self, widget):
+        gtk.main_quit()
+
+    def on_save(self, widget):
+        #TODO
+        print("on_save called")
+
+    def on_save_as(self, widget):
+        file_save = gtk.FileChooserDialog(title="Save UPPAAL XML file", 
+            action=gtk.FILE_CHOOSER_ACTION_SAVE,
+                buttons=(gtk.STOCK_CANCEL,
+                        gtk.RESPONSE_CANCEL,
+                        gtk.STOCK_SAVE,
+                        gtk.RESPONSE_OK))
+        filter = gtk.FileFilter()
+        filter.set_name("UPPAAL XML files")
+        filter.add_pattern("*.xml")
+        file_save.add_filter(filter)
+        filter = gtk.FileFilter()
+        filter.set_name("All files")
+        filter.add_pattern("*")
+        file_save.add_filter(filter)
+
+        if file_save.run() == gtk.RESPONSE_OK:
+            filename = file_save.get_filename()
+            file_save.destroy()
+        else:
+            file_save.destroy()
+            return
+
+        if not filename.endswith(".xml") and not os.path.exists(filename):
+            filename = filename + ".xml"
+            
+        filesock = open(filename, "w")
+        filesock.write(self.nta.to_xml())
+        filesock.close()
+    
+    def on_open(self, widget):
+        file_open = gtk.FileChooserDialog(title="Open UPPAAL XML file", 
+            action=gtk.FILE_CHOOSER_ACTION_OPEN,
+                buttons=(gtk.STOCK_CANCEL,
+                        gtk.RESPONSE_CANCEL,
+                        gtk.STOCK_OPEN,
+                        gtk.RESPONSE_OK))
+        filter = gtk.FileFilter()
+        filter.set_name("UPPAAL XML files")
+        filter.add_pattern("*.xml")
+        file_open.add_filter(filter)
+        filter = gtk.FileFilter()
+        filter.set_name("All files")
+        filter.add_pattern("*")
+        file_open.add_filter(filter)
+
+        if file_open.run() == gtk.RESPONSE_OK:
+            filename = file_open.get_filename()
+            file_open.destroy()
+        else:
+            file_open.destroy()
+            return
+        self.open_file(filename)
+            
+    def open_file(self, filename):
+        filesock = open(filename, "r")
+        self.nta = pyuppaal.NTA.from_xml(filesock)
+        setup_canvas(self.canvas, self.nta)
+        filesock.close()
+
+    def on_zoom_in(self, widget=None):
+        curscale = self.canvas.get_scale()
+        self.canvas.set_scale(curscale+0.4)
+
+    def on_zoom_out(self, widget=None):
+        curscale = self.canvas.get_scale()
+        self.canvas.set_scale(curscale-0.4)
+
+    def on_zoom_normal(self, widget=None):
+        self.canvas.set_scale(1.0)
+
+    def on_export_activate(self, widget=None):
+        global canvas
+        surface = cairo.PDFSurface ("export.pdf", 9 * 72, 10 * 72)
+        cr = cairo.Context (surface)
+
+        ''' Place it in the middle of our 9x10 page. '''
+        cr.translate (300, 350)
+
+        canvas.render (cr, None, 1.0)
+        cr.show_page ()
+
+
+def main ():
+    window = MainWindow()
+    
+    gtk.main ()
+
+if __name__ == "__main__":
+    main()
+
+# vim:ts=4:sw=4:expandtab

@@ -1,0 +1,25 @@
+#!/usr/bin/python
+import pyuppaal
+import sys
+import argparse
+parser = argparse.ArgumentParser(description='layout_uppaal')
+parser.add_argument('--templates', '-T', action='store', type=lambda x: x.split(','), dest='templates', help='Set template list: template_1,...,template_n', default=[])
+parser.add_argument('--template',  '-t', action='append', default=[], dest='templates', help='Append to template list')
+parser.add_argument('--nail-angle', '-a', action='store', type=float, help='Transition-sharpening parameter: angle threshold. Default: 110.0', default=110.0, dest='nailangle')
+parser.add_argument('--nail-inter-distance', '-d', action='store', help='Transition-sharpening parameter: inter-nail-distance threshold. Default: 1.0', default=1.0, dest='nailinterdistance', type=float)
+parser.add_argument('infile', type=argparse.FileType('r'), help='input file or \'-\' for stdin')
+parser.add_argument('outfile', type=argparse.FileType('w'), help='output file or \'-\' for stdout')
+parser.add_argument('--version', action='version', version='%(prog)s 1.1')
+
+result = parser.parse_args()
+
+nta = pyuppaal.NTA.from_xml(result.infile)
+
+for template in nta.templates:
+    if template.name in result.templates or not result.templates:
+        print >> sys.stderr,'updating template: ', template.name
+        template.layout(auto_nails=True, nailAngleThreshold=result.nailangle, nailInterDistanceThreshold=result.nailinterdistance)
+
+result.outfile.write(nta.to_xml())
+
+# vim:ts=4:sw=4:expandtab
