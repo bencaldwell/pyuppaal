@@ -25,6 +25,7 @@ import subprocess
 import re
 import tempfile, os
 import math
+import networkx as nx
 
 def require_keyword_args(num_unnamed):
     """Decorator s.t. a function's named arguments cannot be used unnamed"""
@@ -183,59 +184,61 @@ class Template:
             transition.sharpen(nailAngleThreshold, nailInterDistanceThreshold)
 
     def layout(self, auto_nails=False, nailAngleThreshold=110.0, nailInterDistanceThreshold=1.0):
-        import pygraphviz
+        """
+        Layout using networkx instead of pygraphviz (problems running on windows?)
+        """
         self.assign_ids()
 
-        G = pygraphviz.AGraph(strict=False)
+        G=nx.Graph()
         #initial node should be the first (dot will place it at the top then)
         for l in [self.initlocation] + self.locations:
             G.add_node(l.id)
-            node = G.get_node(l.id)
-            node.attr['label'] = l.invariant.get_value().replace('\n', '\\n')
+            # node = G.get_node(l.id)
+            # node.attr['label'] = l.invariant.get_value().replace('\n', '\\n')
         for t in self.transitions:
             if auto_nails:
                 t.nails = []
             curnode = t.source
             for nextnode in t.nails + [t.target]:
-                G.add_edge(curnode.id, nextnode.id, key=t.id)
+                G.add_edge(curnode.id, nextnode.id)
                 #add label to first segment
-                if curnode == t.source:
-                    edge = G.get_edge(curnode.id, nextnode.id)
-                    label = '';
-                    for a in [t.select, t.guard, t.synchronisation, t.assignment]:
-                        if a.get_value() != None:
-                            label += a.get_value().replace('\n', '\\n')+'\\n'
-                    if len(label) > 0:
-                        label = label[0:len(label)-2]
-                    edge.attr['label'] = label
-                curnode = nextnode
-        G.layout(prog='dot')
+                # if curnode == t.source:
+                #     edge = G[curnode.id][nextnode.id]
+                #     label = '';
+                #     for a in [t.select, t.guard, t.synchronisation, t.assignment]:
+                #         if a.get_value() != None:
+                #             label += a.get_value().replace('\n', '\\n')+'\\n'
+                #     if len(label) > 0:
+                #         label = label[0:len(label)-2]
+                #     edge.attr['label'] = label
+                # curnode = nextnode
+        pos=nx.circular_layout(G,dim=2,scale=200)
 
         for l in self.locations:
-            (l.xpos, l.ypos) = map(self.dot2uppaalcoord, G.get_node(l.id).attr['pos'].split(','))
+            (l.xpos, l.ypos) = map(self.dot2uppaalcoord, pos[l.id])
             (l.name.xpos, l.name.ypos) = (l.xpos, l.ypos + UPPAAL_LINEHEIGHT)
             (l.invariant.xpos, l.invariant.ypos) = (l.xpos, l.ypos + 2 * UPPAAL_LINEHEIGHT)
-        for t in self.transitions:
-            #for nail in t.nails:
-            #    nailnode = G.get_node(nail.id)
-            #    (nail.xpos, nail.ypos) = map(self.dot2uppaalcoord, nailnode.attr['pos'].split(','))
-            #    curnode = nail
+        # for t in self.transitions:
+        #     #for nail in t.nails:
+        #     #    nailnode = G.get_node(nail.id)
+        #     #    (nail.xpos, nail.ypos) = map(self.dot2uppaalcoord, nailnode.attr['pos'].split(','))
+        #     #    curnode = nail
 
-            #first segment
-            edge = G.get_edge(t.source.id, (t.nails + [t.target])[0].id, key=t.id)
-            if auto_nails:
-                t.nails = []
-                for nailpos in edge.attr['pos'].split(" "):
-                    xpos, ypos = map(self.dot2uppaalcoord, nailpos.split(","))
-                    t.nails += [Nail(xpos, ypos)]
-            ydelta = 0
-            for a in ['select', 'guard', 'synchronisation', 'assignment']:
-                label = getattr(t, a)
-                if label.get_value() != None:
-                    (x, y) = map(self.dot2uppaalcoord, edge.attr['lp'].split(','))
-                    label.xpos = x
-                    label.ypos = y+ydelta
-                    ydelta += UPPAAL_LINEHEIGHT
+        #     #first segment
+        #     edge = G.get_edge(t.source.id, (t.nails + [t.target])[0].id, key=t.id)
+        #     if auto_nails:
+        #         t.nails = []
+        #         for nailpos in edge.attr['pos'].split(" "):
+        #             xpos, ypos = map(self.dot2uppaalcoord, nailpos.split(","))
+        #             t.nails += [Nail(xpos, ypos)]
+        #     ydelta = 0
+        #     for a in ['select', 'guard', 'synchronisation', 'assignment']:
+        #         label = getattr(t, a)
+        #         if label.get_value() != None:
+        #             (x, y) = map(self.dot2uppaalcoord, edge.attr['lp'].split(','))
+        #             label.xpos = x
+        #             label.ypos = y+ydelta
+        #             ydelta += UPPAAL_LINEHEIGHT
         self.sharpenTransitions(nailAngleThreshold, nailInterDistanceThreshold)
  
 

@@ -8,5 +8,5 @@ setup(name='pyuppaal',
     author_email='benny.caldwell@gmail.com',
     license='GPL-3',
     packages=['pyuppaal'],
-    # install_requires=['pydotplus'],
+    install_requires=['networkx'],
     zip_safe=False)
