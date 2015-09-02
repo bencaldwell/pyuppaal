@@ -3,25 +3,36 @@ Python library for manipulating UPPAAL xml files. Can currently import, export a
 
 This project was created from the existing launchpad site https://launchpad.net/pyuppaal.
 
-## Original README
+## Installation Instructions 
 
-1) Installation Instructions 
-pyuppaal depends on the following ubuntu packages:
-python-pygraphviz, python-ply
+1) Install pygraphviz. On windows the requires steps are:
 
-On ubuntu run:
-apt-get install python-pygraphviz, python-ply
+    1) Install mingw32
 
-2) Running pyuppal scripts
+    2) Download pygraphviz sources
+
+    3) Edit setup.py in pygraphviz folder to:
+
+        * library_path=r"c:\Program Files (x86)\Graphviz 2.28\bin"
+
+        * include_path=r"c:\Program Files (x86)\Graphviz 2.28\include"
+
+    4) run python setup.py build -c mingw32
+
+    5) run python setup.py install
+  
+2) Install pyuppaal using python setup.py install
+
+## Running pyuppal scripts
 
 To autolayout a model run bin/layout_uppaal, use option --help for arguments.
 
-3) Using pyuppal
+## Using pyuppal
 
 To use pyuppal in your application or the python shell, use import pyuppaal. 
 Remember to have pyuppaal in you PYTHONPATH.
 
-4) Running tests
+## Running tests
 To run tests invoke the test script test/run_tests.sh:
 
 sh test/run_tests.sh
