@@ -1,4 +1,4 @@
-from setuptools import setup
+from distutils.core import setup
 
 setup(name='pyuppaal',
     version='0.1',
@@ -8,5 +8,5 @@ setup(name='pyuppaal',
     author_email='benny.caldwell@gmail.com',
     license='GPL-3',
     packages=['pyuppaal'],
-    install_requires=['pygraphviz'],
-    zip_safe=False)
+    requires=['pygraphviz']
+    )
